@@ -1,5 +1,6 @@
 from lib.Offer import Offer
 from lib.Log import Log
+from lib.Constants import  Constants
 import requests, time, os, sys, json
 from requests.models import Response
 from datetime import datetime
@@ -7,6 +8,7 @@ from prettytable import PrettyTable
 from urllib.parse import unquote, urlparse, parse_qs
 import base64, hashlib, hmac, gzip, secrets
 import pyaes
+from argparse import ArgumentParser, Namespace
 from pbkdf2 import PBKDF2
 
 try:
@@ -14,101 +16,23 @@ try:
 except:
   pass
 
-APP_NAME = "com.amazon.rabbit"
-APP_VERSION = "303338310"
-DEVICE_NAME = "Le X522"
-MANUFACTURER = "LeMobile"
-OS_VERSION = "LeEco/Le2_NA/le_s2_na:6.0.1/IFXNAOP5801910272S/61:user/release-keys"
-
 class FlexUnlimited:
-  allHeaders = {
-    "AmazonApiRequest": {
-      "x-amzn-identity-auth-domain": "api.amazon.com",
-      "User-Agent": "AmazonWebView/Amazon Flex/0.0/iOS/15.2/iPhone"
-    },
-    "FlexCapacityRequest": {
-      "Accept": "application/json",
-      "x-amz-access-token": None,
-      "Authorization": "RABBIT3-HMAC-SHA256 SignedHeaders=x-amz-access-token;x-amz-date, "
-                       "Signature=82e65bd06035d5bba38c733ac9c48559c52c7574fb7fa1d37178e83c712483c0",
-      "X-Amz-Date": None,
-      "Accept-Encoding": "gzip, deflate, br",
-      "x-flex-instance-id": "BEEBE19A-FF23-47C5-B1D2-21507C831580",
-      "Accept-Language": "en-US",
-      "Content-Type": "application/json",
-      "User-Agent": "iOS/16.1 (iPhone Darwin) Model/iPhone Platform/iPhone14,2 RabbitiOS/2.112.2",
-      "Connection": "keep-alive",
-      "Cookie": 'session-id=147-7403990-6925948; session-id-time=2082787201l; '
-                'session-token=1mGSyTQU1jEQgpSB8uEn6FFHZ1iBcFpe9V7LTPGa3GV3sWf4bgscBoRKGmZb3TQICu7PSK5q23y3o4zYYhP'
-                '/BNB5kHAfMvWcqFPv/0AV7dI7desGjE78ZIh+N9Jv0KV8c3H/Xyh0OOhftvJQ5eASleRuTG5+TQIZxJRMJRp84H5Z+YI'
-                '+IhWErPdxUVu8ztJiHaxn05esQRqnP83ZPxwNhA4uwaxrT2Xm; '
-                'at-main="Atza|IwEBIB4i78dwxnHVELVFRFxlWdNNXzFreM2pXeOHsic9Xo54CXhW0m5juyNgKyCL6KT_9bHrQP7VUAIkxw'
-                '-nT2JH12KlOuYp6nbdv-y6cDbV5kjPhvFntPyvBEYcl405QleSzBtH_HUkMtXcxeFYygt8l-KlUA8-JfEKHGD14'
-                '-oluobSCd2UdlfRNROpfRJkICzo5NSijF6hXG4Ta3wjX56bkE9X014ZnVpeD5uSi8pGrLhBB85o4PKh55ELQh0fwuGIJyBcyWSpGPZb5'
-                'uVODSsXQXogw7HCFEoRnZYSvR_t7GF5hm_78TluPKUoYzvw4EVfJzU"; '
-                'sess-at-main="jONjae0aLTmT+yqJV5QC+PC1yiAdolAm4zRrUlcnufM="; '
-                'ubid-main=131-1001797-1551209; '
-                'x-main="ur180BSwQksvu@cBWH@IQejqHw6ZYkMDKkwbdOwJvEeVZWlh15tnxZdleqfq9qO0"'
-    }
-  }
-  routes = {
-    "GetOffers": "https://flex-capacity-na.amazon.com/GetOffersForProviderPost",
-    "AcceptOffer": "https://flex-capacity-na.amazon.com/AcceptOffer",
-    "GetAuthToken": "https://api.amazon.com/auth/register",
-    "RequestNewAccessToken": "https://api.amazon.com/auth/token",
-    "ForfeitOffer": "https://flex-capacity-na.amazon.com/schedule/blocks/",
-    "GetEligibleServiceAreas": "https://flex-capacity-na.amazon.com/eligibleServiceAreas",
-    "GetOfferFiltersOptions": "https://flex-capacity-na.amazon.com/getOfferFiltersOptions"
-  }
-
   def __init__(self) -> None:
-    try:
-      with open("config.json") as configFile:
-        config = json.load(configFile)
-        self.username = config["username"]
-        self.password = config["password"]
-        self.desiredWarehouses = config["desiredWarehouses"] if len(config["desiredWarehouses"]) >= 1 else []  # list of warehouse ids
-        self.minBlockRate = config["minBlockRate"]
-        self.minPayRatePerHour = config["minPayRatePerHour"]
-        self.arrivalBuffer = config["arrivalBuffer"]  # arrival buffer in minutes
-        self.desiredStartTime = config["desiredStartTime"]  # start time in military time
-        self.desiredEndTime = config["desiredEndTime"]  # end time in military time
-        self.desiredWeekdays = set()
-        self.retryLimit = config["retryLimit"]  # number of jobs retrieval requests to perform
-        self.refreshInterval = config["refreshInterval"]  # sets delay in between getOffers requests
-        self.twilioFromNumber = config["twilioFromNumber"]
-        self.twilioToNumber = config["twilioToNumber"]
-        self.__retryCount = 0
-        self.__rate_limit_number = 1
-        self.__acceptedOffers = []
-        self.__startTimestamp = time.time()
-        self.__requestHeaders = FlexUnlimited.allHeaders.get("FlexCapacityRequest")
-        self.refreshToken = config["refreshToken"]
-        self.accessToken = config["accessToken"]
-        self.session = requests.Session()
-        
-        desiredWeekdays = config["desiredWeekdays"]
+    # Load all arguments pass to script
+    self.__load_arguments()
+    # Make new factory client for twilio
+    self.__factoryClientTwilio()
+    # Login into AmazonFlex
+    self.__registerAccount()
 
-        twilioAcctSid = config["twilioAcctSid"]
-        twilioAuthToken = config["twilioAuthToken"]
-
-    except KeyError as nullKey:
-      Log.error(f'{nullKey} was not set. Please setup FlexUnlimited as described in the README.')
-      sys.exit()
-    except FileNotFoundError:
-      Log.error("Config file not found. Ensure a properly formatted 'config.json' file exists in the root directory.")
-      sys.exit()
-
-    if twilioAcctSid != "" and twilioAuthToken != "" and self.twilioFromNumber != "" and self.twilioToNumber != "":
-      self.twilioClient = Client(twilioAcctSid, twilioAuthToken)
-    else:
-      self.twilioClient = None
-      
-    self.__setDesiredWeekdays(desiredWeekdays)
-
-    if self.refreshToken == "":
-      self.__registerAccount()
-
+    self.__retryCount = 0
+    self.__rate_limit_number = 1
+    self.__acceptedOffers = []
+    self.__startTimestamp = time.time()
+    self.__requestHeaders = Constants.allHeaders.get("FlexCapacityRequest")
+    self.session = requests.Session()
+    self.session.proxies.update(self.proxies)
+  
     self.__requestHeaders["x-amz-access-token"] = self.accessToken
     self.__requestHeaders["X-Amz-Date"] = FlexUnlimited.__getAmzDate()
     self.serviceAreaIds = self.__getEligibleServiceAreas()
@@ -120,6 +44,100 @@ class FlexUnlimited:
       },
       "serviceAreaIds": self.serviceAreaIds
     }
+
+  def __set_arguments(self) -> Namespace: 
+    parser = ArgumentParser()
+    parser.add_argument('--username', help='Username of AmazonFlex', type=str)
+    parser.add_argument('--password', help='Password of AmazonFlex', type=str)
+
+    parser.add_argument('--desiredWarehouses', help='List of warehouse ids', nargs='*', type=str)
+
+    parser.add_argument('--minBlockRate', help='Minimum block rate', type=int)
+    parser.add_argument('--minPayRatePerHour', help='Minimum hourly pay rate', type=int)
+
+    parser.add_argument('--arrivalBuffer', help='Arrival buffer in minutes', type=int)
+    parser.add_argument('--desiredStartTime', help='Start time in military time', type=str)
+    parser.add_argument('--desiredEndTime', help='End time in military time', type=str)
+    parser.add_argument('--desiredWeekdays', help='Sets delay in between getOffers requests', nargs='*', type=str)
+
+    parser.add_argument('--retryLimit', help='Number of jobs retrieval requests to perform', type=int)
+    parser.add_argument('--refreshInterval', help='Time interval to resume the search', type=int)
+  
+    parser.add_argument('--refreshToken', help='Refresh Token', type=str)
+    parser.add_argument('--accessToken', help='Access Token', type=str)
+
+    parser.add_argument('--proxyUrl', help='Proxy url', type=str)
+    parser.add_argument('--proxyUserame', help='Proxy username', type=str)
+    parser.add_argument('--proxyPassword', help='Proxy password', type=str)
+
+    # Information about the device that will establish the connection to AWS Flex. 
+    parser.add_argument('--appName', help='Application name')
+    parser.add_argument('--appVersion', help='Application verison')
+    parser.add_argument('--deviceName', help='Device name')
+    parser.add_argument('--manufacturer', help='Manufacturer')
+    parser.add_argument('--osVersion', help='OS version')
+
+    # Twilio settings
+    parser.add_argument('--twilioFromNumber', help='Twilio from number', type=str)
+    parser.add_argument('--twilioToNumber', help='Twilio to number', type=str)
+    parser.add_argument('--twilioAcctSid', help='Twilio acct sid', type=str)
+    parser.add_argument('--twilioAuthToken', help='Twilio auth token', type=str)
+
+    return parser.parse_args()
+
+  def __load_arguments(self) -> None: 
+    args = self.__set_arguments()
+    
+    self.username = args.username
+    self.password = args.password
+
+    self.desiredWarehouses = args.desiredWarehouses
+
+    self.minBlockRate = args.minBlockRate
+    self.minPayRatePerHour = args.minPayRatePerHour
+
+    self.arrivalBuffer = args.arrivalBuffer
+    self.desiredStartTime = args.desiredStartTime
+    self.desiredEndTime = args.desiredEndTime
+    self.desiredWeekdays = set()
+    self.__setDesiredWeekdays(args.desiredWeekdays)
+
+    self.retryLimit = args.retryLimit
+    self.refreshInterval = args.refreshInterval
+
+    self.refreshToken = args.refreshToken
+    self.accessToken = args.accessToken
+
+    self.proxies = Constants.getProxies(args.proxyUrl, args.proxies, args.proxyPassword)
+
+    self.appName = args.appName
+    self.appVersion = args.appVersion
+    self.deviceName = args.deviceName
+    self.manufacturer = args.manufacturer
+    self.osVersion = args.osVersion
+    
+    self.twilioFromNumber = args.twilioFromNumber
+    self.twilioToNumber = args.twilioToNumber
+    self.twilioAcctSid = args.twilioAcctSid
+    self.twilioAuthToken = args.twilioAuthToken
+
+  def __factoryClientTwilio():
+    self.twilioClient = None
+
+    if self.twilioAcctSid == "":
+      return 
+
+    if self.twilioAuthToken == "":
+      return 
+
+    if self.twilioFromNumber == "":
+      return 
+
+    if self.twilioToNumber == "":
+      return 
+
+    self.twilioClient = Client(self.twilioAcctSid, self.twilioAuthToken)
+
     
   def __setDesiredWeekdays(self, desiredWeekdays):
     weekdayMap = {"mon": 0, "tue": 1, "wed": 2, "thu": 3, "fri": 4, "sat": 5, "sun": 6}
@@ -136,12 +154,15 @@ class FlexUnlimited:
         self.desiredWeekdays = None
 
   def __registerAccount(self):
-    link = "https://www.amazon.com/ap/signin?ie=UTF8&clientContext=134-9172090-0857541&openid.pape.max_auth_age=0&use_global_authentication=false&accountStatusPolicy=P1&openid.identity=http%3A%2F%2Fspecs.openid.net%2Fauth%2F2.0%2Fidentifier_select&use_audio_captcha=false&language=en_US&pageId=amzn_device_na&arb=97b4a0fe-13b8-45fd-b405-ae94b0fec45b&openid.return_to=https%3A%2F%2Fwww.amazon.com%2Fap%2Fmaplanding&openid.assoc_handle=amzn_device_na&openid.oa2.response_type=token&openid.mode=checkid_setup&openid.ns.pape=http%3A%2F%2Fspecs.openid.net%2Fextensions%2Fpape%2F1.0&openid.ns.oa2=http%3A%2F%2Fwww.amazon.com%2Fap%2Fext%2Foauth%2F2&openid.oa2.scope=device_auth_access&openid.claimed_id=http%3A%2F%2Fspecs.openid.net%2Fauth%2F2.0%2Fidentifier_select&disableLoginPrepopulate=0&openid.oa2.client_id=device%3A32663430323338643639356262653236326265346136356131376439616135392341314d50534c4643374c3541464b&openid.ns=http%3A%2F%2Fspecs.openid.net%2Fauth%2F2.0"
-    print("Link: " + link)
+    if self.refreshToken != "":
+      return
+
+    print("Link: " + Constants.get("RegisterAccount"))
     maplanding_url = input("Open the previous link (make sure to copy the entire link) in a browser, sign in, and enter the entire resulting URL here:\n")
     parsed_query = parse_qs(urlparse(maplanding_url).query)
     reg_access_token = unquote(parsed_query['openid.oa2.access_token'][0])
     device_id = secrets.token_hex(16)
+
     amazon_reg_data = {
       "auth_data": {
         "access_token": reg_access_token
@@ -156,19 +177,19 @@ class FlexUnlimited:
         "device_serial": device_id,
         "device_type": "A1MPSLFC7L5AFK",
         "mac_address": secrets.token_hex(64).upper(),
-        "manufacturer": MANUFACTURER,
-        "model": DEVICE_NAME,
+        "manufacturer": self.manufacturer,
+        "model": self.deviceName,
         "os_version": "30",
-        "product": DEVICE_NAME
+        "product": self.deviceName
       },
       "registration_data": {
-        "app_name": APP_NAME,
-        "app_version": APP_VERSION,
-        "device_model": DEVICE_NAME,
+        "app_name": self.appName,
+        "app_version": self.appVersion,
+        "device_model": self.deviceName,
         "device_serial": device_id,
         "device_type": "A1MPSLFC7L5AFK",
         "domain": "Device",
-        "os_version": OS_VERSION,
+        "os_version": self.osVersion,
         "software_version": "130050002"
       },
       "requested_extensions": [
@@ -186,25 +207,26 @@ class FlexUnlimited:
       }
     }
 
-    reg_headers = {
-      "Content-Type": "application/json",
-      "Accept-Charset": "utf-8",
-      "x-amzn-identity-auth-domain": "api.amazon.com",
-      "Connection": "keep-alive",
-      "Accept": "*/*",
-      "Accept-Language": "en-US"
-    }
-    res = self.session.post(FlexUnlimited.routes.get("GetAuthToken"), json=amazon_reg_data, headers=reg_headers, verify=True)
+    res = self.session.post(
+                Constants.routes.get("GetAuthToken"), 
+                headers=Constants.allHeaders.get("AmazonApiLogin"), 
+                json=amazon_reg_data, 
+                verify=True)
+
     if res.status_code != 200:
         print("login failed")
         exit(1)
+
     res = res.json()
     tokens = res['response']['success']['tokens']['bearer']
+
     self.accessToken = tokens['access_token']
     self.refreshToken = tokens['refresh_token']
+
     print("Displaying refresh token in case config file fails to save tokens.")
     print("If it fails, copy the refresh token into the config file manually.")
     print("Refresh token: " + self.refreshToken)
+
     try:
       with open("config.json", "r+") as configFile:
         config = json.load(configFile)
@@ -227,11 +249,11 @@ class FlexUnlimited:
     Helper method for the register function. Generates user context map.
     """
     cookies = json.dumps({
-      "ApplicationName": APP_NAME,
-      "ApplicationVersion": APP_VERSION,
+      "ApplicationName": self.appName,
+      "ApplicationVersion": self.appVersion,
       "DeviceLanguage": "en",
-      "DeviceName": DEVICE_NAME,
-      "DeviceOSVersion": OS_VERSION,
+      "DeviceName": self.deviceName,
+      "DeviceOSVersion": self.osVersion,
       "IpAddress": requests.get('https://api.ipify.org').text,
       "ScreenHeightPixels": "1920",
       "ScreenWidthPixels": "1280",
@@ -248,18 +270,19 @@ class FlexUnlimited:
 
   def __getFlexAccessToken(self):
     data = {
-      "app_name": APP_NAME,
-      "app_version": APP_VERSION,
+      "app_name": self.appName,
+      "app_version": self.appVersion,
       "source_token_type": "refresh_token",
       "source_token": self.refreshToken,
       "requested_token_type": "access_token",
     }
-    headers = {
-      "User-Agent": "Dalvik/2.1.0 (Linux; U; Android 10; Pixel 2 Build/OPM1.171019.021)",
-      "x-amzn-identity-auth-domain": "api.amazon.com",
-    }
-    res = self.session.post(FlexUnlimited.routes.get("RequestNewAccessToken"), json=data, headers=headers).json()
+    request = self.session.post(
+                    Constants.routes.get("RequestNewAccessToken"), 
+                    headers=Constants.allHeaders.get("FlexAccessToken"),
+                    json=data)
+    res = request.json()
     self.accessToken = res['access_token']
+
     try:
       with open("config.json", "r+") as configFile:
         config = json.load(configFile)
@@ -308,8 +331,11 @@ class FlexUnlimited:
       "requested_token_type": ["bearer", "mac_dms", "website_cookies"]
     }
     try:
-      response: Response = self.session.post(FlexUnlimited.routes.get("GetAuthToken"),
-                               headers=FlexUnlimited.allHeaders.get("AmazonApiRequest"), json=payload).json()
+      request = self.session.post(
+                        Constants.routes.get("GetAuthToken"),
+                        headers=Constants.allHeaders.get("AmazonApiRequest"), 
+                        json=payload)
+      response = request.json()
       return response.get("response").get("success").get("tokens").get("bearer").get("access_token")
     except Exception as e:
       twoStepVerificationChallengeUrl = self.__getTwoStepVerificationChallengeUrl(response)
@@ -322,8 +348,14 @@ class FlexUnlimited:
   Parse the verification challenge code unique to the user from the failed login attempt and return the url where they can complete the two step verification.
   """
   def __getTwoStepVerificationChallengeUrl(self, challengeRequest: Response) -> str:
-    verificationChallengeCode: str = challengeRequest.get("response").get("challenge").get("uri").split("?")[1].split("=")[1]
-    return "https://www.amazon.com/ap/challenge?openid.return_to=https://www.amazon.com/ap/maplanding&openid.oa2.code_challenge_method=S256&openid.assoc_handle=amzn_device_ios_us&pageId=amzn_device_ios_light&accountStatusPolicy=P1&openid.claimed_id=http://specs.openid.net/auth/2.0/identifier_select&openid.mode=checkid_setup&openid.identity=http://specs.openid.net/auth/2.0/identifier_select&openid.ns.oa2=http://www.amazon.com/ap/ext/oauth/2&openid.oa2.client_id=device:30324244334531423246314134354635394236443142424234413744443936452341334e5748585451344542435a53&language=en_US&openid.ns.pape=http://specs.openid.net/extensions/pape/1.0&openid.oa2.code_challenge=n76GtDRiGSvq-Bhrez9x0CypsZFB_7eLfEDy_qZtqFk&openid.oa2.scope=device_auth_access&openid.ns=http://specs.openid.net/auth/2.0&openid.pape.max_auth_age=0&openid.oa2.response_type=code" + f"&arb={verificationChallengeCode}"
+    return Constants.getTwoStepVerificationChallengeUrl(
+        challengeRequest
+                .get("response")
+                .get("challenge")
+                .get("uri")
+                .split("?")[1]
+                .split("=")[1]
+    )
 
   @staticmethod
   def __getAmzDate() -> str:
@@ -335,28 +367,25 @@ class FlexUnlimited:
   def __getEligibleServiceAreas(self):
     self.__requestHeaders["X-Amz-Date"] = FlexUnlimited.__getAmzDate()
     response = self.session.get(
-      FlexUnlimited.routes.get("GetEligibleServiceAreas"),
-      headers=self.__requestHeaders)
+                      Constants.routes.get("GetEligibleServiceAreas"),
+                      headers=self.__requestHeaders)
     if response.status_code == 403:
       self.__getFlexAccessToken()
       response = self.session.get(
-        FlexUnlimited.routes.get("GetEligibleServiceAreas"),
-        headers=self.__requestHeaders
-      )
+                        Constants.routes.get("GetEligibleServiceAreas"),
+                        headers=self.__requestHeaders)
     return response.json().get("serviceAreaIds")
 
   def getAllServiceAreas(self):
     self.__requestHeaders["X-Amz-Date"] = FlexUnlimited.__getAmzDate()
     response = self.session.get(
-      FlexUnlimited.routes.get("GetOfferFiltersOptions"),
-      headers=self.__requestHeaders
-      )
+                      Constants.routes.get("GetOfferFiltersOptions"),
+                      headers=self.__requestHeaders)
     if response.status_code == 403:
       self.__getFlexAccessToken()
       response = self.session.get(
-        FlexUnlimited.routes.get("GetOfferFiltersOptions"),
-        headers=self.__requestHeaders
-      )
+                        Constants.routes.get("GetOfferFiltersOptions"),
+                        headers=self.__requestHeaders)
 
     serviceAreaPoolList = response.json().get("serviceAreaPoolList")
     serviceAreasTable = PrettyTable()
@@ -373,39 +402,41 @@ class FlexUnlimited:
     Offers response object
     """
     response = self.session.post(
-      FlexUnlimited.routes.get("GetOffers"),
-      headers=self.__requestHeaders,
-      json=self.__offersRequestBody)
+                      Constants.routes.get("GetOffers"),
+                      headers=self.__requestHeaders,
+                      json=self.__offersRequestBody)
+
     if response.status_code == 403:
       self.__getFlexAccessToken()
       response = self.session.post(
-        FlexUnlimited.routes.get("GetOffers"),
-        headers=self.__requestHeaders,
-        json=self.__offersRequestBody)
+                        Constants.routes.get("GetOffers"),
+                        headers=self.__requestHeaders,
+                        json=self.__offersRequestBody)
+
     return response
 
   def __acceptOffer(self, offer: Offer):
     self.__requestHeaders["X-Amz-Date"] = self.__getAmzDate()
 
     request = self.session.post(
-      FlexUnlimited.routes.get("AcceptOffer"),
-      headers=self.__requestHeaders,
-      json={"offerId": offer.id})
+                      Constants.routes.get("AcceptOffer"),
+                      headers=self.__requestHeaders,
+                      json={"offerId": offer.id})
 
     if request.status_code == 403:
       self.__getFlexAccessToken()
       request = self.session.post(
-        FlexUnlimited.routes.get("AcceptOffer"),
-        headers=self.__requestHeaders,
-        json={"offerId": offer.id})
+                        Constants.routes.get("AcceptOffer"),
+                        headers=self.__requestHeaders,
+                        json={"offerId": offer.id})
 
     if request.status_code == 200:
       self.__acceptedOffers.append(offer)
       if self.twilioClient is not None:
         self.twilioClient.messages.create(
-          to=self.twilioToNumber,
-          from_=self.twilioFromNumber,
-          body=offer.toString())
+                            to=self.twilioToNumber,
+                            from_=self.twilioFromNumber,
+                            body=offer.toString())
       Log.info(f"Successfully accepted an offer.")
     else:
       Log.error(f"Unable to accept an offer. Request returned status code {request.status_code}")
