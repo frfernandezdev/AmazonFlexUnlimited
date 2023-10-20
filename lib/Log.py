@@ -1,9 +1,9 @@
 class Log:
     
     @staticmethod 
-    def info(message: str):
-        print(f'INFO: {message}', flush=True)
+    def info(*args: list):
+        print(f'INFO: {args}', flush=True)
 
     @staticmethod
-    def error(message: str):
-        print(f'ERROR: {message}', flush=True)
+    def error(*args: list):
+        print(f'ERROR: {args}', flush=True)
