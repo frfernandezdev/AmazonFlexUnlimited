@@ -12,17 +12,6 @@ if __name__ == "__main__":
 
     parser = ArgumentParser()
     parser.add_argument(
-        "--username",
-        help="Username of AmazonFlex",
-        type=str,
-    )
-    parser.add_argument(
-        "--password",
-        help="Password of AmazonFlex",
-        type=str,
-    )
-
-    parser.add_argument(
         "--desiredWarehouses",
         help="List of warehouse ids",
         nargs="*",
@@ -147,8 +136,6 @@ if __name__ == "__main__":
     args = parser.parse_args()
 
     flexUnlimited = FlexUnlimited(
-        username=args.username,
-        password=args.password,
         desiredWarehouses=args.desiredWarehouses,
         minBlockRate=args.minBlockRate,
         minPayRatePerHour=args.minPayRatePerHour,

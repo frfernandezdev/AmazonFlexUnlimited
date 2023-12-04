@@ -39,8 +39,6 @@ except:
 class FlexUnlimited:
     def __init__(
         self,
-        username: str,
-        password: str,
         desiredWarehouses: list,
         minBlockRate: int,
         minPayRatePerHour: int,
@@ -65,9 +63,6 @@ class FlexUnlimited:
         twilioAcctSid: str,
         twilioAuthToken: str,
     ) -> None:
-        self.username = username
-        self.password = password
-
         self.desiredWarehouses = desiredWarehouses
 
         self.minBlockRate = minBlockRate
@@ -321,77 +316,6 @@ class FlexUnlimited:
         res = request.json()
         self.accessToken = res["access_token"]
         self.__requestHeaders["x-amz-access-token"] = self.accessToken
-
-    def __getFlexRequestAuthToken(
-        self,
-    ) -> str:
-        """
-        Get authorization token for Flex Capacity requests
-        Returns:
-        An access token as a string
-        """
-        payload = {
-            "requested_extensions": [
-                "device_info",
-                "customer_info",
-            ],
-            "cookies": {
-                "website_cookies": [],
-                "domain": ".amazon.com",
-            },
-            "registration_data": {
-                "domain": "Device",
-                "app_version": "0.0",
-                "device_type": "A3NWHXTQ4EBCZS",
-                "os_version": "15.2",
-                "device_serial": "0000000000000000",
-                "device_model": "iPhone",
-                "app_name": "Amazon Flex",
-                "software_version": "1",
-            },
-            "auth_data": {
-                "user_id_password": {
-                    "user_id": self.username,
-                    "password": self.password,
-                }
-            },
-            "user_context_map": {"frc": ""},
-            "requested_token_type": [
-                "bearer",
-                "mac_dms",
-                "website_cookies",
-            ],
-        }
-        try:
-            request = self.session.post(
-                Constants.routes.get("GetAuthToken"),
-                headers=Constants.allHeaders.get("AmazonApiRequest"),
-                json=payload,
-            )
-            response = request.json()
-            return (
-                response.get("response")
-                .get("success")
-                .get("tokens")
-                .get("bearer")
-                .get("access_token")
-            )
-        except Exception as e:
-            twoStepVerificationChallengeUrl = self.__getTwoStepVerificationChallengeUrl(
-                response
-            )
-            print("Unable to authenticate to Amazon Flex.")
-            print(
-                f"\nPlease try completing the two step verification challenge at \033[1m{twoStepVerificationChallengeUrl}\033[0m . Then try again."
-            )
-            print(
-                "\nIf you already completed the two step verification, please check your Amazon Flex username and password in the config file and try again."
-            )
-            sys.exit()
-
-    """
-  Parse the verification challenge code unique to the user from the failed login attempt and return the url where they can complete the two step verification.
-  """
 
     def __getTwoStepVerificationChallengeUrl(
         self,
