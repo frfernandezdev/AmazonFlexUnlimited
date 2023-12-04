@@ -102,12 +102,6 @@ class FlexUnlimited:
         self.twilioAcctSid = twilioAcctSid
         self.twilioAuthToken = twilioAuthToken
 
-        # Make new factory client for twilio
-        self.__factoryClientTwilio()
-
-        # Login into AmazonFlex
-        self.__registerAccount()
-
         self.__retryCount = 0
         self.__rate_limit_number = 1
         self.__acceptedOffers = []
@@ -116,7 +110,13 @@ class FlexUnlimited:
         self.session = requests.Session()
 
         if self.proxies:
-          self.session.proxies.update(self.proxies)
+            self.session.proxies.update(self.proxies)
+
+        # Make new factory client for twilio
+        self.__factoryClientTwilio()
+
+        # Login into AmazonFlex
+        self.__registerAccount()
 
         self.__requestHeaders["x-amz-access-token"] = self.accessToken
         self.__requestHeaders["X-Amz-Date"] = FlexUnlimited.__getAmzDate()
@@ -132,6 +132,7 @@ class FlexUnlimited:
             },
             "serviceAreaIds": self.serviceAreaIds,
         }
+        print(self.__offersRequestBody)
 
     def __factoryClientTwilio(self):
         self.twilioClient = None
@@ -258,8 +259,8 @@ class FlexUnlimited:
         print("Refresh token: " + self.refreshToken)
         print("registration successful")
 
-    @staticmethod
     def __generate_frc(
+        self,
         device_id,
     ):
         """
@@ -456,6 +457,37 @@ class FlexUnlimited:
                 ]
             )
         return serviceAreasTable
+
+    def getOffers(self) -> Response:
+        """
+        Get job offers.
+
+        Returns:
+        Offers response object
+        """
+        response = self.session.post(
+            Constants.routes.get("GetOffers"),
+            headers=self.__requestHeaders,
+            json=self.__offersRequestBody,
+        )
+
+        if response.status_code == 403:
+            self.__getFlexAccessToken()
+            response = self.session.post(
+                Constants.routes.get("GetOffers"),
+                headers=self.__requestHeaders,
+                json=self.__offersRequestBody,
+            )
+
+        if response.status_code == 200:
+            currentOffers = response.json().get("offerList")
+            currentOffers.sort(
+                key=lambda pay: int(pay["rateInfo"]["priceAmount"]),
+                reverse=True,
+            )
+            for offer in currentOffers:
+                offerResponseObject = Offer(offerResponseObject=offer)
+                print(offerResponseObject.toString())
 
     def __getOffers(
         self,

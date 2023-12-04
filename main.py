@@ -132,10 +132,17 @@ if __name__ == "__main__":
 
     parser.add_argument(
         "--getAllServiceAreas",
-        "--w",
+        "-w",
         dest="getAllServiceAreas",
         action="store_true",
         help="Get all service areas",
+    )
+    parser.add_argument(
+        "--getOffers",
+        "-o",
+        dest="getOffers",
+        action="store_true",
+        help="Get all job offers",
     )
     args = parser.parse_args()
 
@@ -169,5 +176,8 @@ if __name__ == "__main__":
     if args.getAllServiceAreas:
         print("\n Your service area options:")
         print(flexUnlimited.getAllServiceAreas())
+    elif args.getOffers:
+        print("\n Your job offers:")
+        print(flexUnlimited.getOffers())
     else:
-      flexUnlimited.run()
+        flexUnlimited.run()
